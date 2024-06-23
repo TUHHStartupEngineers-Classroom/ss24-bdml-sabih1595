@@ -184,7 +184,7 @@ load_model_performance_metrics <- function(path, test_tbl) {
   
 }
 
-model_metrics_tbl <- fs::dir_info(path = "D:/Masters_TUHH/2nd Semester/Business for Data Science/bdml-Danish-Mallick/h20_models") %>%
+model_metrics_tbl <- fs::dir_info(path = "/Applications/ss24-bdml-sabih1595/h20_models") %>%
   select(path) %>%
   mutate(metrics = map(path, load_model_performance_metrics, test_tbl)) %>%
   unnest(cols = metrics)
@@ -221,7 +221,7 @@ load_model_performance_metrics <- function(path, test_tbl) {
   
 }
 
-model_metrics_tbl <- fs::dir_info(path = "D:/Masters_TUHH/2nd Semester/Business for Data Science/bdml-Danish-Mallick/h20_models") %>%
+model_metrics_tbl <- fs::dir_info(path = "/Applications/ss24-bdml-sabih1595/h20_models") %>%
   select(path) %>%
   mutate(metrics = map(path, load_model_performance_metrics, test_tbl)) %>%
   unnest(cols = metrics)
