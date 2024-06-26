@@ -1,0 +1,203 @@
+---
+title: "03 Automated Machine Learning with H20"
+date: "2024-07-06"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    collapsed: false
+    number_sections: true
+    toc_depth: 3
+    #code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
+```
+
+# Challenges Chapter 1
+
+Last compiled: `r Sys.Date()`
+
+1.Compensation Features
+
+What can you deduce about the interaction between Monthly Income and Attrition?
+
+c.   Those that are leaving have a lower Monthly Income
+
+
+2.Compensation Features
+
+What can you deduce about the interaction between Percent Salary Hike and Attrition?
+
+d.   It's difficult to deduce anything based on the visualization
+
+
+3.Compensation Features
+
+What can you deduce about the interaction between Stock Option Level and Attrition?
+
+c.   It's difficult to deduce anything based on the visualization
+
+
+4.Survey Results
+
+What can you deduce about the interaction between Environment Satisfaction and Attrition?
+
+a.    A higher proportion of those leaving have a low environment satisfaction level
+
+
+5.Survey Results
+
+What can you deduce about the interaction between Work Life Balance and Attrition
+
+b.   Those that are staying have a higher density of 2's and 3's
+
+
+6.Performance Data
+
+What Can you deduce about the interaction between Job Involvement and Attrition?
+
+a.    Those that are leaving have a lower density of 3's and 4's
+
+
+7.Work-Life Features
+
+What can you deduce about the interaction between Over Time and Attrition?
+
+b.   The proportion of those staying that are working Over Time are high compared to those that are not staying
+
+
+8.Training and Education
+
+What can you deduce about the interaction between Training Times Last Year and Attrition
+
+c.   It's difficult to deduce anything based on the visualization
+
+
+9.Time-Based Features
+
+What can you deduce about the interaction between Years At Company and Attrition
+
+b.   People that leave tend to have less working years at the company
+
+
+10.Time-Based Features
+
+What can you deduce about the interaction between Years Since Last Promotion and Attrition?
+
+c.   It's difficult to deduce anything based on the visualization
+
+## Code
+
+```{r code,fig.height=10,fig.width=12}
+
+
+library(h2o)
+library(tidyverse)
+source('extract_h2o_model_name_by_position.R')
+library(readxl)
+library(skimr)
+library(GGally)
+employee_attrition_tbl <- read_csv("datasets-1067-1925-WA_Fn-UseC_-HR-Employee-Attrition.csv")
+
+
+
+# Select relevant columns
+selected_columns <- employee_attrition_tbl %>%
+  select(Attrition, contains("MonthlyIncome"), contains("Hike"), contains("Stock"), 
+         contains("Environment"), contains("WorkLifeBalance"), contains("JobInvolvement"), 
+         contains("OverTime"), contains("TrainingTimeLastYear"), contains("YearsAtCompany"), 
+         contains("YearsSinceLast"))
+
+# Create a pair plot
+ggpairs(selected_columns, aes(color = Attrition))
+```
+
+# Challenges Chapter 2
+
+## Code
+
+```{r chap2, warning=FALSE,message=FALSE,error=FALSE, results='hide'}
+# Load data
+library(tidyverse)
+source('extract_h2o_model_name_by_position.R')
+library(readxl)
+library(rsample)
+library(recipes)
+library(PerformanceAnalytics)
+
+#0.Fetching Data and Reducing as required
+product_backorders_raw <- read_csv("product_backorders.csv")
+
+product_backorders_tbl <- product_backorders_raw %>%
+  select(sku,national_inv,forecast_9_month,sales_9_month,went_on_backorder)
+
+#1.Load the training & test dataset
+set.seed(seed = 1122)
+split_obj                       <- rsample::initial_split(product_backorders_tbl, prop = 0.85)
+train_backorder_tbl              <- training(split_obj)
+test_backorder_tbl               <- testing(split_obj)
+
+recipe_obj <- recipe(went_on_backorder ~., data = train_backorder_tbl) %>% 
+  step_zv(all_predictors()) %>% 
+  prep()
+
+train_tbl <- bake(recipe_obj, new_data = train_backorder_tbl)
+test_tbl  <- bake(recipe_obj, new_data = test_backorder_tbl)
+
+
+
+
+h2o.init() 
+split_h2o <- h2o.splitFrame(as.h2o(train_tbl), ratios = c(0.85), seed = 1122) 
+train_h2o <- split_h2o[[1]] 
+valid_h2o <- split_h2o[[2]] 
+test_h2o  <- as.h2o(test_tbl) 
+
+
+write_rds(valid_h2o, "valid_h2o.rds")
+write_rds(train_h2o, "train_h2o.rds")
+
+
+valid_h2o<-read_rds("valid_h2o.rds")
+train_h2o<-read_rds("train_h2o.rds")
+
+
+#2.Specifiy the response and predictor variables
+y <- "went_on_backorder"
+x <- setdiff(names(train_h2o), y)
+
+
+
+#3.Run AutoML specifying the stopping criterion
+automl_models_h2o <- h2o.automl(
+  x = x,
+  y = y,
+  training_frame    = train_h2o,
+  validation_frame  = valid_h2o,
+  leaderboard_frame = test_h2o,
+  max_runtime_secs  = 30,
+  nfolds            = 5 
+)
+
+```
+```{r leaderboard}
+#4.View the leaderboard
+automl_models_h2o@leaderboard
+```
+```{r remaining,warning=FALSE,message=FALSE,error=FALSE, results='hide'}
+h2o_model<-automl_models_h2o@leaderboard %>% 
+  extract_h2o_model_name_by_position(1) %>% 
+  h2o.getModel()
+#5.Predicting using Leader Model
+predictions <- h2o.predict(h2o_model, newdata = as.h2o(test_tbl))
+```
+```{r chap2prediction}
+predictions %>% as_tibble()
+
+
+#6.Save the leader model
+h2o_model%>%h2o.saveModel(path = "h20_models/") %>% invisible()
+```
