@@ -1,0 +1,167 @@
+---
+title: "06 Deep Learning"
+date: "2024-06"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    collapsed: false
+    number_sections: true
+    toc_depth: 3
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
+
+
+```
+
+
+```{r}
+
+
+library(tidyverse)
+library(keras)
+library(lime)
+library(rsample)
+library(recipes)
+library(yardstick)
+library(corrr)
+library(reticulate)
+library(tensorflow)
+
+```
+
+```{r}
+churn_data_raw <- read.csv("./WA_Fn-UseC_-Telco-Customer-Churn.csv")
+
+glimpse(churn_data_raw)
+```
+
+```{r}
+churn_data_tbl <- churn_data_raw %>%
+                  select(Churn, everything(), -customerID) %>%
+                  tidyr::drop_na()
+```
+
+```{r}
+# Splitting data into training and testing sets
+set.seed(100)
+train_test_split <- rsample::initial_split(churn_data_tbl, prop = 0.8)
+train_test_split
+
+## <Analysis/Assess/Total>
+## <5626/1406/7032>
+
+# Extracting training and testing data
+train_tbl <- training(train_test_split)
+test_tbl  <- testing(train_test_split)
+
+```
+
+```{r}
+churn_data_tbl %>% 
+    ggplot(aes(x = tenure)) + 
+    geom_histogram(binwidth = 0.5, fill = "#2DC6D6") +
+    labs(
+        title = "Distribution of Tenure without Binning",
+        x     = "Tenure (months)"
+    )
+
+```
+
+```{r}
+churn_data_tbl %>% 
+    ggplot(aes(x = tenure)) + 
+    geom_histogram(bins = 6, color = "white", fill = "black") +
+    labs(
+        title = "Distribution of Tenure with Six Bins",
+        x     = "Tenure (months)"
+    )
+
+```
+
+```{r}
+churn_data_tbl %>% 
+    ggplot(aes(x = TotalCharges)) + 
+    geom_histogram(bins = 100, fill = "blue") +
+    labs(
+        title = "Histogram of TotalCharges with 100 Bins",
+        x     = "Total Charges"
+    )
+
+```
+
+```{r}
+churn_data_tbl_mod <- churn_data_tbl %>% 
+    mutate(TotalCharges = log10(TotalCharges))
+
+churn_data_tbl_mod %>% 
+    ggplot(aes(x = TotalCharges)) + 
+    geom_histogram(bins = 100, fill = "red") +
+    labs(
+        title = "Log-transformed TotalCharges Histogram with 100 Bins",
+        x     = "Total Charges"
+    )
+
+```
+
+```{r}
+# Checking if log transformation improves correlation 
+# between TotalCharges and Churn
+
+train_tbl %>%
+    select(Churn, TotalCharges) %>%
+    mutate(
+        Churn = Churn %>% as.factor() %>% as.numeric(),
+        LogTotalCharges = log(TotalCharges)
+    ) %>%
+    correlate() %>%
+    focus(Churn) %>%
+    fashion()
+
+
+```
+
+```{r}
+churn_data_tbl %>% 
+    pivot_longer(cols = c(Contract, InternetService, MultipleLines, PaymentMethod), 
+                 names_to  = "feature", 
+                 values_to = "category") %>% 
+    ggplot(aes(category)) +
+    geom_bar(fill = "#2DC6D6") +
+    facet_wrap(~ feature, scales = "free") +
+    labs(
+        title = "Categorical Features to be One-hot Encoded"
+    ) +
+    theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+```
+
+```{r}
+# Creating a preprocessing recipe
+rec_obj <- recipe(Churn ~ ., data = train_tbl) %>%
+    step_rm(Churn) %>% 
+    step_discretize(tenure, options = list(cuts = 6)) %>%
+    step_log(TotalCharges) %>%
+    step_dummy(all_nominal(), -all_outcomes(), one_hot = TRUE) %>%
+    step_center(all_predictors(), -all_outcomes()) %>%
+    step_scale(all_predictors(), -all_outcomes()) %>%
+    prep(data = train_tbl)
+
+```
+
+```{r}
+x_train_tbl <- bake( rec_obj , new_data =  train_tbl)
+x_test_tbl  <- bake( rec_obj , new_data =  test_tbl)
+
+```
+
+```{r}
+y_train_vec <- ifelse( train_tbl$Churn == "Yes", TRUE, FALSE )
+y_test_vec  <- ifelse( test_tbl$Churn  == "Yes", TRUE, FALSE)
+
+```
+
